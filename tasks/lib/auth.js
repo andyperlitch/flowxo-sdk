@@ -69,6 +69,7 @@ AuthUtil.handlers.oauth = function(grunt, service, envs, formatCreds, cb) {
   var strategy = new service.auth.strategy(options, formatCreds);
   passport.use(name, strategy);
 
+  var httpsServer;
   var app = express();
   app.use(session({
     secret: crypto.randomBytes(64).toString('hex'),
@@ -81,11 +82,32 @@ AuthUtil.handlers.oauth = function(grunt, service, envs, formatCreds, cb) {
   app.get(route, passport.authorize(name, service.auth.params));
 
   app.get(cbRoute, passport.authorize(name), function(req, res) {
+    var matches = /^(https:\/\/[^\.]+\.salesforce\.com)/.exec(req.headers.referer);
+    if (matches && matches[1]) {
+      var sfHost = matches[1];
+      console.log('salesforce instance: ', sfHost);
+    }
     res.status(200).send('Thank you. You may now close this window.');
     cb(null, req.account);
   });
 
-  app.listen(OAUTH_SERVER_PORT);
+  if (process.env.OAUTH_SERVER_URL.indexOf('https://') === 0) {
+
+    grunt.log.writeln(['Using SSL Server for Auth']);
+    var fs = require('fs');
+    var https = require('https');
+
+    var sslOptions = {
+      key: fs.readFileSync('./flowxo-dev.cc.key'),
+      cert: fs.readFileSync('./flowxo-dev.cc.cert')
+    };
+
+    httpsServer = https.createServer(sslOptions, app);
+    httpsServer.listen(OAUTH_SERVER_PORT);
+
+  }else{
+    app.listen(OAUTH_SERVER_PORT);
+  }
 
   var userUrl = url.format({
     protocol: serverUrl.protocol,
